@@ -55,6 +55,7 @@
     const resultsContainer = document.getElementById('results');
     const statusContainer = document.getElementById('status');
 
+    // Initialize on page load
     window.addEventListener('load', () => {
         const params = new URLSearchParams(window.location.search);
         const urlQuery = params.get('query') || '';
@@ -62,14 +63,13 @@
         loadMovies(urlQuery);
     });
 
+    // Handle form submission
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const query = searchInput.value.trim();
         loadMovies(query);
         if (query) {
             window.history.pushState({}, '', `?query=${encodeURIComponent(query)}`);
-        } else {
-            window.history.pushState({}, '', '/');
         }
     });
 
@@ -78,13 +78,18 @@
         resultsContainer.innerHTML = '<div class="loading">Loading movies...</div>';
 
         try {
-            const url = `index.php?query=${encodeURIComponent(query)}`;
+            // Fetch from index.php with the query parameter
+            const url = `./index.php?query=${encodeURIComponent(query)}`;
             const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
             const html = await response.text();
 
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const movieCards = doc.querySelectorAll('.movie-card');
+            // Extract movie data from the response
+            const movieCards = extractMovieCards(html);
 
             if (movieCards.length === 0) {
                 resultsContainer.innerHTML = `
@@ -98,6 +103,7 @@
                 return;
             }
 
+            // Show search status if applicable
             if (query) {
                 statusContainer.innerHTML = `
                     <div class="status success">
@@ -106,27 +112,111 @@
                 `;
             }
 
+            // Render movies
             resultsContainer.innerHTML = '';
-            movieCards.forEach(card => {
-                resultsContainer.appendChild(card.cloneNode(true));
+            movieCards.forEach(movie => {
+                resultsContainer.innerHTML += renderMovieCard(movie);
             });
+
         } catch (error) {
-            console.error('Error loading movies:', error);
+            console.error('Error:', error);
             resultsContainer.innerHTML = `
                 <div class="movie-card">
                     <div class="movie-details">
-                        <h3>Error loading movies</h3>
+                        <h3>Error Loading Movies</h3>
                         <p>${escapeHtml(error.message)}</p>
+                        <p style="font-size: 0.9rem; color: #999; margin-top: 10px;">Make sure index.php is accessible at ./index.php</p>
                     </div>
                 </div>
             `;
         }
     }
 
-    function escapeHtml(text) {
+    function extractMovieCards(html) {
+        const cards = [];
+        const cardPattern = /<div class="movie-card">(.*?)<\/div>\s*<\/div>\s*<\/div>/gs;
+        const matches = html.matchAll(cardPattern);
+
+        for (const match of matches) {
+            const cardHtml = match[1];
+            
+            // Extract image
+            const imgMatch = cardHtml.match(/<img[^>]*src="([^"]*)"[^>]*>/);
+            const posterUrl = imgMatch ? imgMatch[1] : '';
+
+            // Extract title
+            const titleMatch = cardHtml.match(/<h3>([^<]*)<\/h3>/);
+            const title = titleMatch ? htmlDecode(titleMatch[1]) : 'Untitled';
+
+            // Extract all tags
+            const tagMatches = [...cardHtml.matchAll(/<span class="tag[^"]*">([^<]*)<\/span>/g)];
+            let releaseDate = '';
+            let score = '';
+            let language = '';
+            let genre = '';
+
+            tagMatches.forEach((tag, index) => {
+                const content = htmlDecode(tag[1]);
+                if (index === 0) releaseDate = content;
+                else if (index === 1) score = content;
+                else if (index === 2) language = content;
+                else if (index === 3) genre = content;
+            });
+
+            // Extract overview
+            const pMatch = cardHtml.match(/<div class="movie-details">([\s\S]*?)<p>([^<]*)<\/p>/);
+            const overview = pMatch ? htmlDecode(pMatch[2]) : '';
+
+            cards.push({
+                posterUrl,
+                title,
+                releaseDate,
+                score,
+                language,
+                genre,
+                overview
+            });
+        }
+
+        return cards;
+    }
+
+    function renderMovieCard(movie) {
+        return `
+            <div class="movie-card">
+                <img src="${escapeHtml(movie.posterUrl)}" alt="${escapeHtml(movie.title)}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23333%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dy=%22.3em%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2216%22%3ENo Image%3C/text%3E%3C/svg%3E'">
+                <div class="movie-details">
+                    <h3>${escapeHtml(movie.title)}</h3>
+                    <div class="movie-meta">
+                        <span class="tag">${escapeHtml(movie.releaseDate)}</span>
+                        <span class="tag score">${escapeHtml(movie.score)}</span>
+                        <span class="tag">${escapeHtml(movie.language)}</span>
+                    </div>
+                    <div class="movie-meta">
+                        <span class="tag">${escapeHtml(movie.genre)}</span>
+                    </div>
+                    <p>${escapeHtml(movie.overview)}</p>
+                </div>
+            </div>
+        `;
+    }
+
+    function htmlDecode(html) {
         const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        div.innerHTML = html;
+        return div.textContent || div.innerText || '';
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
     }
 </script>
 </body>
