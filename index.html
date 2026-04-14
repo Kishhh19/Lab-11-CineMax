@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CineMax - Movie Search Engine</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000; margin: 0; padding: 0; color: #fff; }
+        .page { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .hero { text-align: center; padding: 60px 20px; background: rgba(255, 255, 255, 0.05); border-radius: 20px; margin-bottom: 40px; border: 1px solid #333; }
+        .hero h1 { font-size: 3rem; margin: 0; color: #fff; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        .hero p { font-size: 1.2rem; color: #ccc; margin: 10px 0 30px; }
+        .search-form { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .search-form input { flex: 1; max-width: 500px; padding: 15px 20px; border-radius: 50px; border: 1px solid #555; background: #222; color: #fff; font-size: 1.1rem; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .search-form input::placeholder { color: #aaa; }
+        .search-form button { padding: 15px 30px; border-radius: 50px; border: none; background: #fff; color: #000; font-size: 1.1rem; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: background 0.3s; }
+        .search-form button:hover { background: #ddd; }
+        .status { margin: 20px 0; padding: 15px; border-radius: 10px; text-align: center; }
+        .status.success { background: rgba(0, 255, 0, 0.1); color: #0f0; border: 1px solid #0f0; }
+        .status.error { background: rgba(255, 0, 0, 0.1); color: #f00; border: 1px solid #f00; }
+        .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 40px; }
+        .movie-card { background: #111; border-radius: 15px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.5); transition: transform 0.3s, box-shadow 0.3s; border: 1px solid #333; }
+        .movie-card:hover { transform: translateY(-5px); box-shadow: 0 12px 35px rgba(0,0,0,0.7); }
+        .movie-card img { width: 100%; height: 200px; object-fit: cover; }
+        .movie-details { padding: 20px; }
+        .movie-details h3 { margin: 0 0 10px; font-size: 1.3rem; color: #fff; }
+        .movie-details p { margin: 10px 0; color: #ccc; line-height: 1.5; }
+        .movie-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .tag { background: #333; border-radius: 20px; padding: 5px 12px; font-size: 0.9rem; color: #fff; border: 1px solid #555; }
+        .tag.score { background: #444; color: #ffd700; border: 1px solid #ffd700; }
+        .loading { text-align: center; padding: 40px; color: #ccc; }
+        @media (max-width: 768px) { .hero h1 { font-size: 2rem; } .results { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="hero">
+        <h1>CineMax</h1>
+        <p>Discover your next favorite movie with our powerful search engine.</p>
+        <form id="searchForm" class="search-form">
+            <input type="text" id="searchInput" placeholder="Search for movies..." value="">
+            <button type="submit">Search</button>
+        </form>
+        <div id="status"></div>
+    </div>
+
+    <div id="results" class="results">
+        <div class="loading">Loading movies...</div>
+    </div>
+</div>
+
+<script>
+    const searchForm = document.getElementById('searchForm');
+    const searchInput = document.getElementById('searchInput');
+    const resultsContainer = document.getElementById('results');
+    const statusContainer = document.getElementById('status');
+
+    window.addEventListener('load', () => {
+        const params = new URLSearchParams(window.location.search);
+        const urlQuery = params.get('query') || '';
+        searchInput.value = urlQuery;
+        loadMovies(urlQuery);
+    });
+
+    searchForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const query = searchInput.value.trim();
+        loadMovies(query);
+        if (query) {
+            window.history.pushState({}, '', `?query=${encodeURIComponent(query)}`);
+        } else {
+            window.history.pushState({}, '', '/');
+        }
+    });
+
+    async function loadMovies(query) {
+        statusContainer.innerHTML = '';
+        resultsContainer.innerHTML = '<div class="loading">Loading movies...</div>';
+
+        try {
+            const url = `index.php?query=${encodeURIComponent(query)}`;
+            const response = await fetch(url);
+            const html = await response.text();
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const movieCards = doc.querySelectorAll('.movie-card');
+
+            if (movieCards.length === 0) {
+                resultsContainer.innerHTML = `
+                    <div class="movie-card">
+                        <div class="movie-details">
+                            <h3>No movies found</h3>
+                            <p>Try adjusting your search query.</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (query) {
+                statusContainer.innerHTML = `
+                    <div class="status success">
+                        Showing results for: <strong>${escapeHtml(query)}</strong>
+                    </div>
+                `;
+            }
+
+            resultsContainer.innerHTML = '';
+            movieCards.forEach(card => {
+                resultsContainer.appendChild(card.cloneNode(true));
+            });
+        } catch (error) {
+            console.error('Error loading movies:', error);
+            resultsContainer.innerHTML = `
+                <div class="movie-card">
+                    <div class="movie-details">
+                        <h3>Error loading movies</h3>
+                        <p>${escapeHtml(error.message)}</p>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+</body>
+</html>
